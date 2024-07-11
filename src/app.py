@@ -36,14 +36,91 @@ def handle_invalid_usage(error):
 def sitemap():
     return generate_sitemap(app)
 
-@app.route('/user', methods=['GET'])
+# User: Nuestro modelo/table
+# query: Buscar/filtrar/encontrar
+# all: todos
+# User.query.all()
+@app.route('/users', methods=['GET', 'POST'])
 def handle_hello():
+    users = User.query.all()
+    serialize_users = [user.serialize() for user in users]
+    return jsonify({
+        "users": serialize_users
+    }), 200
+# CREATE / READ / UPDATE / DELETE
+#  POST / GET 2(2) / PATCH o PUT / DELETE
+@app.route('/user/<int:id>', methods=["GET"])
+def get_user(id):
+    # User.query.get(id) -> Busca un usuario por el id
+    user = User.query.get(id)
+    if user is None:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "user": user.serialize()
+    }), 200
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+@app.route("/user", methods=["POST"])
+def add_user():
+    body = request.json
+    email = body.get("email", None)
+    password = body.get("password", None)
+    
 
-    return jsonify(response_body), 200
+    if email is None:
+        # utf-8
+        # {"llave": "valor", "nombre": "Gustavo", "apellido": "patinio"}
+        return jsonify({"error": "El email es requerido"}), 400
+    if password is None:
+        return jsonify({"error": "El password es requerido"}), 400
+    
+    # Creamos una nueva instancia de nuestro modal
+    new_user = User(email=email, password=password, is_active=True)
+    # db
+    try:
+        db.session.add(new_user)
+        db.session.commit()
+        # Obtiene los datos unicos de la BBDD(Como ID)
+        db.session.refresh(new_user)
+        return jsonify({"usuario": new_user.serialize()}), 201
+    except Exception as error:
+        db.session.rollback() # Es que revierte los cambios que no
+        # se hayan guardado
+
+        return jsonify({"error": f"{error}"}), 500
+    
+@app.route("/user/<int:id>", methods=["PUT"])
+def update_user(id):
+    # Ver si ese usuario existe
+    body = request.json
+    user = User.query.get(id)
+    if user is None:
+        return jsonify({"error", "Usuario no encontrado"}), 404
+    
+    email = body.get("email", None)
+    if email is None:
+        return jsonify({"error": "El email es requerido"}), 400
+
+    user.email = email
+    try:
+        db.session.commit()
+        return jsonify({"user": user.serialize()}), 200
+    except Exception as error:
+        db.session.rollback()
+        return jsonify({"error": f"Internal server error: {error}"}), 500
+    
+@app.route("/user/<int:id>", methods=["DELETE"])
+def delete_user(id):
+    user = User.query.get(id)
+    if user is None:
+        return jsonify({"error": "User not found"}), 404
+    try:
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"msg": "Usuario borrado"}), 200
+    except Exception as error:
+        db.session.rollback()
+        return jsonify({"error": f"internal server error: {error}"}),500
 
 # this only runs if `$ python src/app.py` is executed
 if __name__ == '__main__':
