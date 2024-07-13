@@ -8,7 +8,7 @@ from flask_swagger import swagger
 from flask_cors import CORS
 from utils import APIException, generate_sitemap
 from admin import setup_admin
-from models import db, User
+from models import db, User, Post
 #from models import Person
 
 app = Flask(__name__)
@@ -47,8 +47,7 @@ def handle_hello():
     return jsonify({
         "users": serialize_users
     }), 200
-# CREATE / READ / UPDATE / DELETE
-#  POST / GET 2(2) / PATCH o PUT / DELETE
+
 @app.route('/user/<int:id>', methods=["GET"])
 def get_user(id):
     # User.query.get(id) -> Busca un usuario por el id
@@ -121,6 +120,89 @@ def delete_user(id):
     except Exception as error:
         db.session.rollback()
         return jsonify({"error": f"internal server error: {error}"}),500
+
+# POST
+# CRUD - CREATE READ[1/3] UPDATE DELETE
+
+@app.route("/posts", methods=["GET"])
+def get_posts():
+    posts = Post.query.all()
+    serialize_posts = [post.serialize() for post in posts]
+    return jsonify({"posts": serialize_posts}), 200
+
+@app.route("/posts/user/<int:id>", methods=["GET"])
+def get_posts_from_user(id):
+    user = User.query.get(id)
+    if user is None:
+        return jsonify({"error": "user not found"}), 404
+    posts = Post.query.filter_by(user_id=id).all()
+    serialize_posts = [post.serialize() for post in posts]
+    return jsonify({"posts": serialize_posts}), 200
+
+# POST/crear
+@app.route("/post", methods=["POST"])
+def create_post():
+    body = request.json
+    content = body.get("content", None) # {"content": "value"}
+    user_id = body.get("user_id", None) #
+
+    if user_id is None:
+        return jsonify({"error": "user_id is required"}), 400
+    user = User.query.get(user_id)
+    if user is None:
+        return jsonify({"error": "user not found"}), 404
+    if content is None:
+        return jsonify({"error": "content is required"}), 400
+
+    new_post = Post(user_id=user_id, content=content)
+    # despues la agrego a la session y despues guardo la sesion
+    try:
+        # 
+        db.session.add(new_post)
+        db.session.commit() # en esta linea
+        db.session.refresh(new_post)
+        return jsonify({"post": new_post.serialize()}), 201
+    
+    except Exception as error:
+        db.session.rollback() #<3
+        return jsonify({"error": f"{error}"}), 500
+
+@app.route("/post/<int:id>", methods=["PUT"])
+def update_post(id):
+    body = request.json
+
+    post = Post.query.get(id)
+    if post is None:
+        return jsonify({"error": "Post not found"}), 404
+
+    content = body.get("content", None)
+    if content is None:
+        return jsonify({"error": "Content is required"}), 400
+
+    post.content = content
+
+    try:
+        db.session.commit()
+        db.session.refresh(post)
+        return jsonify({"post": post.serialize()}), 200
+    
+    except Exception as error:
+        db.session.rollback()
+        return jsonify({"error": f"{error}"}), 500
+
+@app.route("/post/<int:id>", methods=["DELETE"])
+def delete_post(id):
+    post = Post.query.get(id)
+    # validar si ese post si quiera existe
+    if post is None:
+        return jsonify({"error": "Post not found"}), 404
+    try:
+        db.session.delete(post)
+        db.session.commit()
+        return jsonify({"msg": "Post deleted successfully"}), 200
+    except Exception as error:
+        return jsonify({"error": f"{error}"}), 500
+# Si, blueprints
 
 # this only runs if `$ python src/app.py` is executed
 if __name__ == '__main__':
